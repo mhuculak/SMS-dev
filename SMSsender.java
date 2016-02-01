@@ -10,16 +10,21 @@ import java.util.List;
 
 public class SMSsender {
     private SMSmessage m_sms_message = null;
+    private MongoInterface m_mongo = null;
     
     private static final String ACCOUNT_SID = "ACe33e12e73a0028063395a5eb8d30cc26";  // FIXME: need to come from database
     private static final String AUTH_TOKEN = "8da21493e68ff088f7f27994583549e0";
 
-    public SMSsender(SMSmessage sms_message) {
+    public SMSsender(SMSmessage sms_message, MongoInterface mongo) {
 	m_sms_message = sms_message;
+	m_mongo = mongo;
     }
 
-    public String sendMessage() {
-	TwilioRestClient client = new TwilioRestClient(ACCOUNT_SID, AUTH_TOKEN);
+    public String sendMessage(String companyid) {
+	//	TwilioRestClient client = new TwilioRestClient(ACCOUNT_SID, AUTH_TOKEN);
+	String sid = m_mongo.getAccountSid(companyid);
+	String token = m_mongo.getAuthToken(companyid);
+	TwilioRestClient client = new TwilioRestClient(sid, token);
 	List<NameValuePair> params = new ArrayList<NameValuePair>();
 	params.add(new BasicNameValuePair("Body", m_sms_message.getContent()));
 	params.add(new BasicNameValuePair("To", m_sms_message.getTo()));

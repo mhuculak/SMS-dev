@@ -24,7 +24,7 @@ public class Chat extends HttpServlet {
 	response.setIntHeader("Refresh", 5);
 	String curr_time = SMSmessage.getCurrentTime();
 	PrintWriter out = response.getWriter();
-	out.println("<h1>Current Time is: " + curr_time + "</h1>");
+
 	int i;
 	if (query == null) {
 	    System.out.println("ERROR: no company specified");
@@ -34,9 +34,20 @@ public class Chat extends HttpServlet {
 		String companyid = request.getParameter("companyid");
 		if (query.contains("entityid")) {
 		    String entityid = request.getParameter("entityid");
+		    String name = m_mongo.getEntityName(entityid);
+		    out.println("<h1>" + name + "'s Chat Window</h1>");
 		    String customer = null;
 		    String focus = m_mongo.getEntityFocus(entityid);
 		    List<String>customers = m_mongo.FindRoutedCustomers(entityid);
+		    /*
+		    if (focus != null) {
+			out.println("<h2>Chat window with companyid = " + companyid + " entityid = " + entityid + " focus = " + focus + " num customers = " + customers.size() + "</h2>");
+		    }
+		    else {
+		        System.out.println("focus is null");
+			out.println("<h2>Chat window with companyid = " + companyid + " entityid = " + entityid + "  num customers = " + customers.size() + "</h2>");
+		    }
+		    */
 		    if (query.contains("customer")) {
 			customer = request.getParameter("customer"); // this happens when the customer is explicitly selected
 			focus = customer;

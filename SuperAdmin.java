@@ -14,8 +14,11 @@ public class SuperAdmin extends HttpServlet {
 	                                     "<form action=\"SuperAdmin\" method=\"GET\"><br>" +
 	                                     "Name: <input type=\"text\" name=\"name\"/><br>" +
 	                                     "email: <input type=\"text\" name=\"email\"/><br>" +
-	                                     "Phone: <input type=\"text\" name=\"phone\" value=\"14387949914\"<br>" +
+	                                     "Phone: <input type=\"text\" name=\"phone\" value=\"14387949914\"/><br>" +
+	                                     "ACCOUNT_SID: <input type=\"text\" name=\"sid\" value=\"ACe33e12e73a0028063395a5eb8d30cc26\"/><br>" +
+	                                     "AUTH_TOKEN: <input type=\"text\" name=\"token\" value=\"8da21493e68ff088f7f27994583549e0\"/><br>" +
 	                                     "<input type=\"submit\" name=\"submit\" value=\"Submit\" /></form>";
+   
     
     public void service(HttpServletRequest request, HttpServletResponse response) throws IOException {
 	String query = request.getQueryString();
@@ -44,7 +47,9 @@ public class SuperAdmin extends HttpServlet {
 	    String name = request.getParameter("name");
 	    String email = request.getParameter("email");
 	    String phone = request.getParameter("phone");
-	    String id = m_mongo.AddCompany(name, email, phone);
+	    String sid = request.getParameter("sid");
+	    String token = request.getParameter("token");
+	    String id = m_mongo.AddCompany(name, email, phone, sid, token);
 	    String company_uri = request.getScheme() + "://" + request.getServerName() + ":" + request.getServerPort() + "/Admin?companyid=" + id;
 	    String subject = "Your new SMS message service";
 	    String email_body = "Congradulations " + name + ", your company can now receive text message using the following number:\n\n" + phone +

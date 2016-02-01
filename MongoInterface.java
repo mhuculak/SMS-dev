@@ -20,6 +20,8 @@ public class MongoInterface {
     private static DBCollection m_entities = null;
     private static DBCollection m_messages = null;
     private static DBCollection m_customers = null;
+    private static DBCollection m_advertisments = null;
+    private static DBCollection m_waiting = null;
     
     private MongoInterface() {
 	try {
@@ -30,6 +32,8 @@ public class MongoInterface {
 	    m_entities = m_db.getCollection("entities"); // business reps
 	    m_messages = m_db.getCollection("messages");
 	    m_customers = m_db.getCollection("customers");
+	    m_advertisments = m_db.getCollection("advertisments");
+	    m_waiting = m_db.getCollection("waiting");
 	}
 	catch (MongoException e) {
 	     e.printStackTrace();
@@ -59,6 +63,80 @@ public class MongoInterface {
 	return m_instance;
     }
 
+    public void addCustomerToWaitingQueue(String companyid, String customerid) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("customerid", customerid );
+	DBCursor cursor = m_waiting.find(searchQuery);
+	if (cursor.count() == 0) { // only care if the customer is not there
+	    BasicDBObject document = new BasicDBObject();
+	    Object id = getNextID();
+	    document.append("_id", id);
+	    document.append("customerid", customerid);
+	    document.append("companyid", companyid);
+	    m_waiting.insert(document);
+	}	
+    }
+
+    public String removeCustomerFromWaitingQueue(String companyid) {
+	BasicDBObject searchQuery = new BasicDBObject("_id", "entries");
+	DBCursor cursor = m_counter.find(searchQuery);
+	long min;
+	if (cursor.count() == 1) {
+	    DBObject document = cursor.next();
+	    min = Long.parseLong(document.get("seq").toString()); // min = current value of the id counter i.e. max value of any id
+	    System.out.println("min value initialized to " + min);
+	}
+	else {
+	    System.out.println("ERROR: could not find the DB counter");
+	    return null;
+	}
+	searchQuery = new BasicDBObject();
+	searchQuery.put("companyid", companyid );	
+	cursor = m_waiting.find(searchQuery);
+	Object minobj = null;
+	if (cursor.count() == 0) {
+	    return null;  // empty so nothing to do
+	}
+	String customerid = null;
+	while (cursor.hasNext()) {
+	    DBObject document = cursor.next();
+	    Object idobj = document.get("_id");
+	    System.out.println("Found id = " + idobj.toString());
+	    long id = Long.parseLong(idobj.toString());	    
+	    if (id <= min) {
+		min = id;
+		minobj = idobj;
+		customerid = document.get("customerid").toString();
+	    }
+	}
+	searchQuery = new BasicDBObject();
+	searchQuery.put("_id", minobj);
+	m_waiting.remove(searchQuery);
+	return customerid;
+    }
+    
+    public String addNewAdvertisment(String companyid, String name, String content) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("companyid", companyid );
+	searchQuery.put("name", name);
+	DBCursor cursor = m_advertisments.find(searchQuery);
+	if (cursor.count() == 0) {
+	    BasicDBObject document = new BasicDBObject();
+	    Object id = getNextID();
+	    document.append("_id", id);
+	    document.append("companyid", companyid);
+	    document.append("name", name);
+	    document.append("content", content);
+	    m_advertisments.insert(document);
+	    return id.toString();
+	}
+	else if (cursor.count() == 1) {
+	    System.out.println("ERROR: advertisment with companyid = " + companyid + " and name = " + name + " already exists");
+	    return null;
+	}
+	return null;
+    }
+    
     public String AddCustomer(String phone) { // customer is identified by a phone number
 	BasicDBObject searchQuery = new BasicDBObject();
 	searchQuery.put("phone", phone);
@@ -97,7 +175,7 @@ public class MongoInterface {
 	}
     }
 
-    public String getCustomerMessage(String phone) {
+    public String getCustomerMessageFromPhone(String phone) {
 	BasicDBObject searchQuery = new BasicDBObject();
 	searchQuery.put("phone", phone);
 	DBCursor cursor = m_customers.find(searchQuery);
@@ -107,6 +185,24 @@ public class MongoInterface {
 	}
 	else {
 	    System.out.println("ERROR: customer phone number " + phone + " matches multiple entries");
+	}
+	return null;
+    }
+    
+    public String getCustomerMessageFromId(String customerid) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("_id", Integer.parseInt(customerid) );
+	DBCursor cursor = m_customers.find(searchQuery);
+	if (cursor.count() == 1) {
+	   DBObject document = cursor.next();
+	   Object messobj = document.get("messageid");
+	   if (messobj != null) {
+	       return messobj.toString();
+	   }
+	   System.out.println("ERROR: messageid not found for customer " + customerid);
+	}
+	else {
+	    System.out.println("ERROR: customer phone number " + customerid + " matches multiple entries");
 	}
 	return null;
     }
@@ -133,7 +229,10 @@ public class MongoInterface {
 	DBCursor cursor = m_customers.find(searchQuery);
 	if (cursor.count() == 1) {
 	    DBObject document = cursor.next();
-	    return CustomerStatus.valueOf(document.get("status"));
+	    Object status = document.get("status");
+	    if (status != null) {
+		return CustomerStatus.valueOf(status.toString());
+	    }
 	}
 	return null;
     }
@@ -144,30 +243,52 @@ public class MongoInterface {
 	DBCursor cursor = m_customers.find(searchQuery);
 	if (cursor.count() == 1) {
 	    DBObject document = cursor.next();
-	    return document.get("entityid");
+	    return document.get("entityid").toString();
 	}
 	return null;	
     }
     
-    public Boolean RouteCustomerToEntity(String entityid, String phone) {
+    public Boolean RouteCustomerToEntity(String entityid, String customerid) {
         BasicDBObject searchQuery = new BasicDBObject();
-	searchQuery.put("phone", phone);
+	searchQuery.put("_id", Integer.parseInt(customerid));
+	String messageid = getCustomerMessageFromId(customerid);
+	if (messageid == null) {
+	    return false;
+	}
+	Boolean result = setMessageEntityID(messageid, entityid);
+	if (result == false) {
+	    System.out.println("ERROR: failed to set entityid = " + entityid + " in message " + messageid);
+	    return false;
+	}
 	DBCursor cursor = m_customers.find(searchQuery);
 	if (cursor.count() == 1) {
 	    BasicDBObject updateQuery =  new BasicDBObject();
 	    BasicDBObject newFields = new BasicDBObject();
+	    System.out.println("Updating customerid " + customerid + " with entityid = " + entityid);
 	    newFields.append("entityid", entityid);
 	    updateQuery.append( "$set", newFields);
 	    m_customers.update(searchQuery, updateQuery);
 	    return true; // sucess
 	}
 	else if(cursor.count() == 0) {
+	    System.out.println("ERROR: customerid " + customerid + " did not match");
 	    return false; // failure
 	}
 	else {
-	    System.out.println("ERROR: customer phone number " + phone + " matches multiple entries");
+	    System.out.println("ERROR: customerid " + customerid + " matches multiple entries");
 	}
 	return false;
+    }
+
+    public void removeCustomerRoutes(String entityid) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("entityid", entityid);
+	BasicDBObject newFields=  new BasicDBObject();
+	newFields.put("entityid", "");
+	newFields.put("status", CustomerStatus.UNKNOWN.toString());
+	BasicDBObject updateQuery =  new BasicDBObject();
+	updateQuery.append( "$set", newFields);
+	m_customers.updateMulti(searchQuery, updateQuery);	
     }
     
     public List<String> FindRoutedCustomers(String entityid) {
@@ -206,7 +327,10 @@ public class MongoInterface {
 	DBCursor cursor = m_entities.find(searchQuery);
 	if (cursor.count() == 1) {
 	    DBObject document = cursor.next();
-	    return document.get("focus").toString();
+	    Object focus = document.get("focus");
+	    if (focus != null) {
+		return focus.toString();
+	    }
 	}
 	else {
 	    System.out.println("ERROR: counld not find unique entity for " + entityid);
@@ -220,7 +344,7 @@ public class MongoInterface {
 	DBCursor cursor = m_entities.find(searchQuery);
 	if (cursor.count() == 1) {
 	    DBObject document = cursor.next();
-	    return document.get("Name").toString();
+	    return document.get("name").toString();
 	}
 	else {
 	    System.out.println("ERROR: counld not find unique entity for " + entityid);
@@ -234,7 +358,7 @@ public class MongoInterface {
 	document.append("_id", id);
 	document.append("companyid", companyid);
 	document.append("parent", parent);
-	document.append("Name", name);
+	document.append("name", name);
 	document.append("email", email);
 	document.append("type", type);
 	document.append("state", "offline");
@@ -277,20 +401,45 @@ public class MongoInterface {
 	return null;
     }
     
-    public String AddCompany(String name, String email, String phone) {
+    public String AddCompany(String name, String email, String phone, String account_sid, String auth_token) {
 	BasicDBObject document = new BasicDBObject();
 	Object id = getNextID();
 	document.append("_id", id);
-	document.append("Name", name);
+	document.append("name", name);
 	document.append("email", email);
-	document.append("Phone", phone);
+	document.append("phone", phone);
+	document.append("account_sid", account_sid);
+	document.append("auth_token", auth_token);
 	m_companies.insert(document);
 	return id.toString();
+    }
+
+    public String getAccountSid(String companyid) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("_id", Integer.parseInt(companyid));
+	DBCursor cursor = m_companies.find(searchQuery);
+	if (cursor.count() == 1) {
+	    DBObject document = cursor.next();
+	    return document.get("account_sid").toString();
+	}
+	return null;
+    }
+
+    public String getAuthToken(String companyid) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("_id", Integer.parseInt(companyid));
+	DBCursor cursor = m_companies.find(searchQuery);
+	if (cursor.count() == 1) {
+	    DBObject document = cursor.next();
+	    return document.get("auth_token").toString();
+	}
+	return null;
     }
     
     public void ShowEntities(String companyid, String parent, PrintWriter out) {
 	out.println("<h1>Children of Parent " + parent + " :</h1>");
 	out.println("<table cellspacing=\"30\">");
+	out.println("<br><tr><td><b>Entity Name</b></td><td><b>Type</b></td><td><b>email</b></td><td><b>Delete It</b></td></tr>");
 	BasicDBObject searchQuery = new BasicDBObject();
 	searchQuery.put("companyid", companyid);
 	searchQuery.put("parent", parent);
@@ -298,12 +447,19 @@ public class MongoInterface {
 	while (cursor.hasNext()) {
 	    out.println("<br><tr>");
 	    DBObject document = cursor.next();
-	    out.println("<td>" + document.get("Name").toString() + "</td>");
+	    out.println("<td>" + document.get("name").toString() + "</td>");
 	    String type = document.get("type").toString();
 	    out.println("<td>" + type + "</td>");
             if (type.equals("employee")) {
 		out.println("<td>" + document.get("email").toString() + "</td>");
 	    }
+	    else {
+		out.println("<td></td>");
+	    }
+	    out.println("<td><form action=\"Admin\" method=\"GET\">" +
+			"<input type=\"hidden\" name=\"companyid\" value=\"" + companyid + "\"/>" +
+			"<input type=\"hidden\" name=\"action\" value=\"delete\"/>" +
+			"<input type=\"submit\" name=\"delete\" value=\"" + document.get("_id").toString() + "\"/></form></td>");
 	    out.println("</tr>");
 	}
 	out.println("</table>");
@@ -311,7 +467,7 @@ public class MongoInterface {
 
     private String doFindCompany(String phone) {
 	BasicDBObject searchQuery = new BasicDBObject();       
-	searchQuery.put("Phone", phone);
+	searchQuery.put("phone", phone);
 	DBCursor cursor = m_companies.find(searchQuery);
 	if (cursor.count() == 1) {
 	    DBObject document = cursor.next();
@@ -338,7 +494,7 @@ public class MongoInterface {
 	DBCursor cursor = m_companies.find(searchQuery);
 	if (cursor.count() == 1) {
 	    DBObject document = cursor.next();
-	    return document.get("Name").toString();
+	    return document.get("name").toString();
 	}
 	return null;
     }
@@ -365,9 +521,9 @@ public class MongoInterface {
 	while (cursor.hasNext()) {
 	    DBObject document = cursor.next();
 	    out.println("<br><tr>");
-	    out.println("<td>" + document.get("Name").toString() + "</td>");
+	    out.println("<td>" + document.get("name").toString() + "</td>");
 	    out.println("<td>" + document.get("email").toString() + "</td>");
-	    out.println("<td>" + document.get("Phone").toString() + "</td>");
+	    out.println("<td>" + document.get("phone").toString() + "</td>");
 	    out.println("<td>" + document.get("_id").toString() + "</td>");
 	    out.println("<td><form action=\"SuperAdmin\" method=\"GET\"><input type=\"submit\" name=\"delete\" value=\"" + document.get("_id").toString() + "\"/></form></td>");
 	    out.println("</tr><br>");
@@ -376,6 +532,18 @@ public class MongoInterface {
 
     }
     public void RemoveEntity(String id) {
+	BasicDBObject searchQuery = new BasicDBObject("_id", Integer.parseInt(id));
+	DBCursor cursor = m_entities.find(searchQuery);
+	if (cursor.count()==1) {
+	    m_entities.remove(searchQuery);
+	    System.out.println("removed entity with id " + id);
+	}
+	else if (cursor.count()>1) {
+	    System.out.println("ERROR: found multiple entities with id = " + id);
+	}
+	else if (cursor.count()==0) {
+	    System.out.println("ERROR: could not find entity with id = " + id);
+	}
     }
     
     public void RemoveCompany(String id) {
@@ -510,5 +678,23 @@ public class MongoInterface {
 	    messages.add(mess);	    
 	}
 	return messages;
+    }
+
+    private Boolean setMessageEntityID(String messageid, String entityid) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("_id", Integer.parseInt(messageid));
+	DBCursor cursor = m_messages.find(searchQuery);
+	if (cursor.count() == 1) {
+	    BasicDBObject updateQuery =  new BasicDBObject();
+	    BasicDBObject newFields = new BasicDBObject();
+	    newFields.append("entityid", entityid);
+	    updateQuery.append( "$set", newFields);
+	    m_messages.update(searchQuery, updateQuery);
+	    return true;
+	}
+	else {
+	    System.out.println("ERROR: could not find unique message with " + messageid);
+	}
+	return false;
     }
 }

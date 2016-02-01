@@ -25,6 +25,17 @@ public class Admin extends HttpServlet {
 	return form;
     }
 
+    private String AddAdvertismentForm(String companyid) {
+	String form = "<h1>Add Advertisment:</h1><br>" +
+	    "<form action=\"Admin\" method=\"GET\"><br>" +
+	    "<input type=\"hidden\" name=\"companyid\" value=\"" + companyid + "\"/><br>" +
+	    "<input type=\"hidden\" name=\"action\" value=\"advertisment\"/><br>" +
+	    "Advertisment Name: <input type=\"text\" name=\"name\"/><br>" +
+	    "Advertisment Content: <input type=\"text\" name=\"content\"/><br>" +
+	    "<input type=\"submit\" name=\"submit\" value=\"Submit\" /></form>";
+	return form;
+    }
+    
     public void service(HttpServletRequest request, HttpServletResponse response) throws IOException {
 	String query = request.getQueryString();
 	m_mongo = MongoInterface.getInstance();	
@@ -43,9 +54,11 @@ public class Admin extends HttpServlet {
 		
 	        if (query.contains("action")) {
 		    String action = request.getParameter("action");
+		    String name = request.getParameter("name");
+		    String return_uri = request.getRequestURI() + "?companyid=" + companyid + "&parent=" + parent;
+		    System.out.println("action = " + action + " return uri = " + return_uri);
 		    if (action.equals("add")) {
-			String entity_type = request.getParameter("type");
-			String name = request.getParameter("name");
+			String entity_type = request.getParameter("type");			
 			String email = request.getParameter("email");
 			String entity_id = m_mongo.AddEntity(companyid, parent, name, email, entity_type);
 			if (entity_type.equals("employee")) {
@@ -54,17 +67,29 @@ public class Admin extends HttpServlet {
 			    String  email_body = "Congradulations " + name + ", you have been added to your company's text message service." +
 			     "\n\nPlease use the following link " + service_uri + " to use this service";
 			    EmailSender.SendEmail(subject, email_body, email);
-			}
-			String return_uri = request.getRequestURI() + "?companyid=" + companyid + "&parent=" + parent;
-			out.println("<br><br><a href=\"" + return_uri + "\">Return</a>");
+			}			
 		    }
 		    else if (action.equals("delete")) {
-			m_mongo.RemoveEntity(request.getParameter("delete"));
+			String delete_entityid = request.getParameter("delete");
+			System.out.println("delete entity " + delete_entityid);
+			m_mongo.RemoveEntity(delete_entityid);
 		    }
+		    else if (action.equals("advertisment")) {
+			
+			String add_id = m_mongo.addNewAdvertisment(companyid, name, request.getParameter("content"));
+			if (add_id == null) {
+			    out.println("<h2>ERROR: advertisment with companyid = " + companyid + " and name = " + name + " already exists</h2>");
+			}
+			else {
+			    out.println("<h2>Advertisment " + name + " was added</h2>");
+			}
+		    }
+		    out.println("<br><br><a href=\"" + return_uri + "\">Return</a>");
 		}
 		else {
 		    m_mongo.ShowEntities(companyid, parent, out);
-		    out.println(AddEntityForm(companyid, parent));	    
+		    out.println(AddEntityForm(companyid, parent));
+		    out.println( AddAdvertismentForm(companyid) );
 		}
 	    }
 	    else {
