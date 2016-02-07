@@ -5,7 +5,7 @@ enum SMSmessageStatus { WAITING, RESPONDED, TIMEOUT, REDIRECTED, ERROR };
 enum CustomerStatus { UNKNOWN, PENDING_ROUTING, ROUTED, WAITING };
     
 public class SMSmessage {
-    private String m_time;       // time stamp
+    private Date m_time;       // time stamp
     private String m_type;       // customer or business i.e which side the message originated from
     private String m_content;    // the message
     private String m_from;       // originating phone number
@@ -18,8 +18,9 @@ public class SMSmessage {
     private String m_id;         // id used as index in the messages collection of the database
     private SMSmessageStatus m_status;     // waiting, responded, forwarded
 
-    public static String getCurrentTime() {
-      Calendar calendar = new GregorianCalendar();
+    /*
+    public static String getCalendarAsString(Calendar calendar) {
+	//      Calendar calendar = new GregorianCalendar();
       String am_pm;
       int hour = calendar.get(Calendar.HOUR);
       int minute = calendar.get(Calendar.MINUTE);
@@ -32,11 +33,17 @@ public class SMSmessage {
       String CT = hour+":"+ minute +":"+ second +" "+ am_pm;
       return CT;
     }
+    */
 
-
+    public static long getTimeDifferenceMsec(SMSmessage older, SMSmessage newer) {
+	long t_older = older.getTime().getTime();
+	long t_newer = newer.getTime().getTime();
+	return t_newer - t_older;
+    }
+    
     public SMSmessage(String content, String from, String to,
 		      String companyid, String entityid) { // ctor for business originated message
-	m_time = getCurrentTime();
+	m_time = new Date();
 	m_type = "business";
 	m_content = content;
 	m_from = from;
@@ -48,7 +55,7 @@ public class SMSmessage {
     }
     
     public SMSmessage(String content, String from, String to) { // ctor for customer originated message
-	m_time = getCurrentTime();
+	m_time = new Date();
 	m_type = "customer";
 	m_content = content;
 	m_from = from;
@@ -59,11 +66,11 @@ public class SMSmessage {
 	m_status = SMSmessageStatus.WAITING;
     }
 
-    public String getTime() {
+    public Date getTime() {
 	return m_time;
     }
 
-    public void setTime(String time) {
+    public void setTime(Date time) {
 	m_time = time;
     }
 

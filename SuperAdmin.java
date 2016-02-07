@@ -19,6 +19,32 @@ public class SuperAdmin extends HttpServlet {
 	                                     "AUTH_TOKEN: <input type=\"text\" name=\"token\" value=\"8da21493e68ff088f7f27994583549e0\"/><br>" +
 	                                     "<input type=\"submit\" name=\"submit\" value=\"Submit\" /></form>";
    
+
+    private void ShowCompanies(List<Company> companies, PrintWriter out) {
+	out.println("<h1>Company List:</h1>");
+	out.println("<table cellspacing=\"30\">");
+	out.println("<br><tr><td><b>Company Name</b></td><td><b>email address</b></td><td><b>Phone Number</b></td><td><b>ID</b></td><td><b>Delete It</b></td><td><b>Activate It</b></td><td><b>Configure It</b></td></tr>");
+	int i;
+	for ( i=0 ; i < companies.size() ; i++ ) {
+	    Company company = companies.get(i);
+	    out.println("<br><tr>");
+	    out.println("<td>" + company.getName() + "</td>");
+	    out.println("<td>" + company.getEmail() + "</td>");
+	    out.println("<td>" + company.getPhone() + "</td>");
+	    out.println("<td>" + company.getID() + "</td>");
+	    out.println("<td><form action=\"SuperAdmin\" method=\"GET\">" +
+			"<input type=\"hidden\" name=\"action\" value=\"delete\"/>" +
+			"<input type=\"submit\" name=\"delete\" value=\"" + company.getID() + "\"/></form></td>");
+	    out.println("<td><form action=\"SuperAdmin\" method=\"GET\">" +
+			"<input type=\"hidden\" name=\"action\" value=\"activate\"/>" +
+			"<input type=\"hidden\" name=\"phone\" value=\"" + company.getPhone() + "\"/>" +
+			"<input type=\"submit\" name=\"activate\" value=\"" + company.getID() + "\"/></form></td>");
+	    out.println("<td><a href=\"Admin?companyid=" + company.getID() + "\">Configure " + company.getName() + "</a></td>");
+	    out.println("</tr><br>");
+	    
+	}
+	out.println("</table>");
+    }
     
     public void service(HttpServletRequest request, HttpServletResponse response) throws IOException {
 	String query = request.getQueryString();
@@ -29,13 +55,22 @@ public class SuperAdmin extends HttpServlet {
 	PrintWriter out = response.getWriter();
 
 	if (query == null) {
-	    m_mongo.ShowCompanies(out);
+	    List<Company> companies = m_mongo.getCompanies();
+	    ShowCompanies(companies, out);
 	    out.println(m_addCompanyForm);
 	}
-	else if (query.contains("delete")) {
-	    m_mongo.RemoveCompany(request.getParameter("delete"));
+	else if (query.contains("action")) {
+	    String action = request.getParameter("action");
+	    if (action.equals("delete")) {
+		m_mongo.RemoveCompany(request.getParameter("delete"));
+	    }
+	    else if (action.equals("activate")) {
+		String companyid = request.getParameter("activate");
+		String phone = request.getParameter("phone");
+		m_mongo.ActivateCompany(phone, companyid);
+	    }
 	    out.println("<br><br><a href=\"" + request.getRequestURI() + "\">Return</a>");
-	}
+	}	
 	else  {
 	    
 	    out.println("<h1>New Company:</h1>");

@@ -21,7 +21,7 @@ public class EmployeeInput extends HttpServlet {
 	return inform;
     }
     /*
-          FIXME: to change status the rep must select the status from the menu and then submit. It is very is to forget to submit
+          FIXME: to change status the rep must select the status from the menu and then submit. It is very easy to forget to submit
                  and the rep is left in the incorrect state ===> we badly need a single click solution
      */
     private String StateInputForm(String companyid, String entityid, String state) {
@@ -88,9 +88,11 @@ public class EmployeeInput extends HttpServlet {
 			String name = m_mongo.getEntityName(entityid);
 			business_response.setName(name);
 			String business_messageid = m_mongo.addMessage(business_response);
+			m_mongo.setEmployeeMessage(entityid, business_messageid);
 			if (sid == null) {
 			     m_mongo.setMessageStatus(business_messageid, SMSmessageStatus.ERROR);
 			}
+			m_mongo.setEntityTimestamp(entityid);
 
 		    }
 		    if (query.contains("status")) {
@@ -100,6 +102,7 @@ public class EmployeeInput extends HttpServlet {
 			    m_mongo.removeCustomerRoutes(entityid); // when offline customers need to be routed elsewhere
 			}
 			else if (status.equals("available")) {
+			    m_mongo.setEntityTimestamp(entityid);
 			    String waiting_customer = m_mongo.removeCustomerFromWaitingQueue(companyid);
 			    while(waiting_customer != null) {
 				System.out.println("route customerid " + waiting_customer + " to entity " + entityid);

@@ -15,29 +15,6 @@ import com.twilio.sdk.verbs.Message;
  */
 public class SMSservlet extends HttpServlet {
 
-    class RouterResult {
-	private CustomerStatus m_status;
-	private String m_entityid;
-	private String m_auto_response;
-
-	public RouterResult(CustomerStatus status, String entityid, String auto_response) {
-	    m_status = status;
-	    m_entityid = entityid;
-	    m_auto_response = auto_response;
-	}
-
-	public CustomerStatus getStatus() {
-	    return m_status;
-	}
-
-	public String getDestination() {
-	    return m_entityid;
-	}
-
-	public String getAutoResponse() {
-	    return m_auto_response;
-	}
-    }
     
     private MongoInterface m_mongo;
     
@@ -88,110 +65,6 @@ public class SMSservlet extends HttpServlet {
 	}
 	return null;
     }
-    private String createRoutingQuestion(List<String> available) {
-	StringBuilder sb = new StringBuilder(100);
-	sb.append("Which of the following would you like to answer your question?\n");
-	int i;
-	for ( i=0 ; i<available.size() ; i++) {
-	    String name = m_mongo.getEntityName(available.get(i));
-	    sb.append("\n" + name);
-	}
-	return sb.toString();
-    }
-
-    private int MatchAnswer(String s1, String s2) {
-	char[] a1 = s1.toCharArray();
-	char[] a2 = s2.toCharArray();
-	int min = s1.length() > s2.length() ? s2.length() : s1.length();
-	int max = s1.length() > s2.length() ? s1.length() : s2.length();
-	int extra = max-min; // added to score to account for difference in size
-	int i;
-	int score = 0;
-	for ( i=0 ; i<min ; i++ ) {
-	    if (Character.toLowerCase(a1[i]) != Character.toLowerCase(a2[i])) { // case independant
-		score++;
-	    }
-	}
-	return score+extra;
-	
-    }
-    private int parseAnswer(List<String> choices, String answer) {
-	int i;
-	int best = -1;
-	int min = 1000000;
-	for ( i=0 ; i<choices.size() ; i++) {
-	    String eid = choices.get(i);
-	    String name = m_mongo.getEntityName(eid);
-	    int score = MatchAnswer(answer, name);
-	    if (score < min) {
-		min = score;
-		best = i;
-	    }
-	}
-	return best;
-    }
-    // Find an employee that can respond to text message sent to company phone number
-    private RouterResult FindRoute(String companyid, String customerid, CustomerStatus status, String answer) {
-	String route = null;
-	String auto_response = "";
-        CustomerStatus new_status = null;	
-	List<String> available = m_mongo.FindAvailableEntities(companyid);
-	if (available == null || available.size() == 0) {
-	    System.out.println("ERROR: no reps available");
-	    route = null;
-	    new_status = CustomerStatus.WAITING;
-	    auto_response = "There are no available agents at the moment";
-	}
-	if (status == CustomerStatus.UNKNOWN) {
-	    if (available.size() == 1) {
-		System.out.println("selecting only available route " + available.get(0) + " with status = " + status);
-	        route = available.get(0);
-		new_status =  CustomerStatus.ROUTED;
-	    }
-	    else if (available.size() > 1) {
-		m_mongo.setCustomerStatus(customerid, status);
-		System.out.println("create routing question with status = " + status);
-	        auto_response = createRoutingQuestion(available);
-		new_status = CustomerStatus.PENDING_ROUTING;
-	    }
-	}
-	else if (status == CustomerStatus.PENDING_ROUTING) {
-	    if (available.size() == 1) {
-		System.out.println("selecting only available route " + available.get(0) + " with status = " + status);
-		route = available.get(0);
-		new_status =CustomerStatus.ROUTED;
-	    }
-	    else if (available.size() > 1) {
-		String selected_route = null;
-		int best = parseAnswer(available, answer);
-		if (best > -1) {
-		    selected_route =  available.get(best);
-		    System.out.println("selecting best available route " + selected_route + " with status = " + status);
-		}
-		/*
-		  What to do if customers response does not match anything ?
-		 */
-		if (selected_route == null) {
-		    System.out.println("selecting first route " + selected_route + " because no best route found with status = " + status);
-		    selected_route = available.get(0); // lame fallback strategy
-		}
-		m_mongo.setCustomerStatus(customerid, status);
-		route = selected_route;
-		new_status = CustomerStatus.ROUTED;
-	    }
-	}
-	else if (status == CustomerStatus.ROUTED) {
-	    System.out.println("selecting existing route with status = " + status);
-	    route = m_mongo.getCustomerRoute(customerid);
-	    new_status = status;
-	}
-	if (new_status == CustomerStatus.ROUTED) {
-	    System.out.println("routing customer " + customerid + " to entity " + route); 
-	    m_mongo.RouteCustomerToEntity(route, customerid);
-	}
-	return new RouterResult(new_status, route, auto_response);
-    }
-
     private String WaitForResponse(long timeout_sec, String entityid, String messageid) { // FIXME: timeout not working
 	long timeout = timeout_sec * 1000;
 	long start_time = System.currentTimeMillis();
@@ -240,8 +113,9 @@ public class SMSservlet extends HttpServlet {
 		}
 	    }
 	}
-	m_mongo = MongoInterface.getInstance();
 
+	m_mongo = MongoInterface.getInstance();
+	
 	Boolean html_mode = false; // html mode is used for debugging
 	if (query != null && query.contains("content")) {
 	    html_mode = true;
@@ -271,24 +145,9 @@ public class SMSservlet extends HttpServlet {
 	System.out.println("call made to " + to + " has company id " + companyid);
 	customer_message.setCompanyID(companyid);
 	String customer_messageid = m_mongo.addMessage(customer_message);
-	/*
-            If we do not call setCustomerMessage(), the message will not get routed.
-            In the case of a customer in state PENDING_ROUTING, the router is asking
-            questions to determine where to route. Therfore we do not route the answers
-            as they are intended for the router rather than the business rep
-	 */
-	if (customer_status != CustomerStatus.PENDING_ROUTING) {
-	    m_mongo.setCustomerMessage(customerid, customer_messageid);
-	}
-	RouterResult router_result = FindRoute(companyid, customerid, customer_status, content);
-        System.out.println("customer status is now " + router_result.getStatus().toString());
-	m_mongo.setCustomerStatus(customerid, router_result.getStatus());
-
-	if (router_result.getStatus() == CustomerStatus.WAITING) { // nothing available
-	    m_mongo.addCustomerToWaitingQueue(companyid, customerid);
-	}
-
-	System.out.println("new customer message has id " + customer_messageid);
+		
+	SMSrouter router = new SMSrouter(companyid, customerid);
+	RouterResult router_result = router.doRoute(customer_messageid, content, customer_status);	
 
 	if (html_mode == true) {
 	    out.println("<h1>reponse:</h1>");

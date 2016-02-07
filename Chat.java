@@ -22,7 +22,8 @@ public class Chat extends HttpServlet {
 	m_mongo = MongoInterface.getInstance();	
 	response.setContentType("text/html");
 	response.setIntHeader("Refresh", 5);
-	String curr_time = SMSmessage.getCurrentTime();
+	Date curr = new Date();
+	String curr_time = curr.toString();
 	PrintWriter out = response.getWriter();
 
 	int i;
@@ -70,19 +71,26 @@ public class Chat extends HttpServlet {
 		    
 		    for ( i=0 ; i<customers.size() ; i++ ) {
 			String uri = "/Chat?companyid=" + companyid + "&entityid=" + entityid + "&customer=" + customers.get(i);
+			String customer_messageid = m_mongo.getCustomerMessageFromPhone(customers.get(i));
+			SMSmessage customer_message = m_mongo.getMessage(customer_messageid);
+			//  System.out.println("Customer message is " + customer_messageid + " message status is " + customer_message.getStatus());
+			String customer_html = "";
 			if (focus.equals(customers.get(i))) {
-			    out.println("<tr><td><a href=\"" + uri + "\"><b>" + customers.get(i) + "</b></td></tr><br>");
+			    customer_html = "<b>" + customers.get(i) + "</b>";
 			}
 			else {
-			    out.println("<tr><td><a href=\"" + uri + "\">" + customers.get(i) + "</td></tr><br>");
+			    customer_html = customers.get(i);
 			}
+			if (customer_message.getStatus() == SMSmessageStatus.WAITING) {
+			    customer_html = "<blink>" + customer_html + "</blink>"; // FIXME: <blink> does not work
+			}
+			out.println("<tr><td><a href=\"" + uri + "\">" + customer_html + "</td></tr><br>");
 		    }
 		    out.println("</table>");
 		    out.println("</td><td width=\"80%\"><br>");
-
 		    
-		    
-		    if (customer != null) {			
+		    if (customer != null) {
+			//			System.out.println("display messages for customer " + customer);
 			List<SMSmessage> messages = m_mongo.getMessages(companyid, entityid, customer);
 			out.println("<table><br>");
 			for ( i=0 ; i<messages.size() ; i++ ) {

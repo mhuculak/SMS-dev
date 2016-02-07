@@ -10,6 +10,7 @@ import com.mongodb.DBCollection;
 import com.mongodb.BasicDBObject;
 import com.mongodb.DBObject;
 import com.mongodb.DBCursor;
+import com.mongodb.BasicDBList;
 
 public class MongoInterface {
     private static MongoInterface m_instance = null;
@@ -22,6 +23,7 @@ public class MongoInterface {
     private static DBCollection m_customers = null;
     private static DBCollection m_advertisments = null;
     private static DBCollection m_waiting = null;
+    private static DBCollection m_actives = null;
     
     private MongoInterface() {
 	try {
@@ -34,6 +36,7 @@ public class MongoInterface {
 	    m_customers = m_db.getCollection("customers");
 	    m_advertisments = m_db.getCollection("advertisments");
 	    m_waiting = m_db.getCollection("waiting");
+	    m_actives = m_db.getCollection("actives"); // used to share phone numbers (should only be for demo purposes)
 	}
 	catch (MongoException e) {
 	     e.printStackTrace();
@@ -159,6 +162,33 @@ public class MongoInterface {
 	return null;
     }
 
+    public void setEmployeeMessage(String entityid, String messageid) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("_id", Integer.parseInt(entityid));
+	DBCursor cursor = m_entities.find(searchQuery);
+	if (cursor.count() == 1) {
+	    BasicDBObject updateQuery =  new BasicDBObject();
+	    BasicDBObject newFields = new BasicDBObject();
+	    newFields.append("messageid", messageid);
+	    updateQuery.append( "$set", newFields);
+	    m_entities.update(searchQuery, updateQuery);
+	}
+    }
+
+    public String getEmployeeMessage(String entityid) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("_id", Integer.parseInt(entityid));
+	DBCursor cursor = m_entities.find(searchQuery);
+	if (cursor.count() == 1) {
+	    DBObject document = cursor.next();
+	    Object messageobj = document.get("messageid");
+	    if (messageobj != null) {
+		return messageobj.toString();
+	    }
+	}
+	return null;
+    }
+
     public void setCustomerMessage(String customerid, String messageid) {
 	BasicDBObject searchQuery = new BasicDBObject();
 	searchQuery.put("_id", Integer.parseInt(customerid));
@@ -248,7 +278,7 @@ public class MongoInterface {
 	return null;	
     }
     
-    public Boolean RouteCustomerToEntity(String entityid, String customerid) {
+    public Boolean RouteCustomerToEntity(String entityid, String customerid) {	
         BasicDBObject searchQuery = new BasicDBObject();
 	searchQuery.put("_id", Integer.parseInt(customerid));
 	String messageid = getCustomerMessageFromId(customerid);
@@ -280,6 +310,20 @@ public class MongoInterface {
 	return false;
     }
 
+    public void removeCustomerRoute(String customerid) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("_id", Integer.parseInt(customerid));
+	DBCursor cursor = m_customers.find(searchQuery);
+	if (cursor.count() == 1) {
+	    BasicDBObject updateQuery =  new BasicDBObject();
+	    BasicDBObject newFields = new BasicDBObject();
+	    newFields.put("entityid", "");
+	    newFields.put("status", CustomerStatus.UNKNOWN.toString());
+	    updateQuery.append( "$set", newFields);
+	    m_customers.update(searchQuery, updateQuery);
+	}	    
+    }
+    
     public void removeCustomerRoutes(String entityid) {
 	BasicDBObject searchQuery = new BasicDBObject();
 	searchQuery.put("entityid", entityid);
@@ -304,7 +348,48 @@ public class MongoInterface {
 	return customers;
     }
     
+    public void addKeyword(String entityid, String keyword) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("_id", Integer.parseInt(entityid));
+	DBCursor cursor = m_entities.find(searchQuery);
+	if (cursor.count() == 1) {
+	    BasicDBObject updateQuery =  new BasicDBObject();
+	    BasicDBObject newFields = new BasicDBObject();
+	    newFields.append("keywords", keyword);
+	    updateQuery.append( "$push", newFields);
+	    m_entities.update(searchQuery, updateQuery);
+	}
+    }
 
+    public BasicDBList getKeywords(String entityid) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("_id", Integer.parseInt(entityid));
+	DBCursor cursor = m_entities.find(searchQuery);
+	if (cursor.count() == 1) {
+	    DBObject document = cursor.next();
+	    BasicDBList keywords = (BasicDBList)document.get("keywords");
+	    return keywords;
+	}
+	return null;
+    }
+
+    public Map<String, BasicDBList> getAvailableKeywords(String companyid) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("companyid", companyid);
+	searchQuery.put("state", "available");
+	DBCursor cursor = m_entities.find(searchQuery);
+	Map<String, BasicDBList> available_keywords = new HashMap<String, BasicDBList> ();
+	while(cursor.hasNext()) {
+	    DBObject document = cursor.next();
+	    String entityid = document.get("_id").toString();
+	    BasicDBList keywords = (BasicDBList)document.get("keywords");
+	    if (keywords != null) {
+		available_keywords.put(entityid, keywords);
+	    }
+	}
+	return available_keywords;
+    }
+    
     public void setEntityFocus(String entityid, String customer) {
 	BasicDBObject searchQuery = new BasicDBObject();
 	searchQuery.put("_id", Integer.parseInt(entityid));
@@ -339,6 +424,9 @@ public class MongoInterface {
     }
 
     public String getEntityName(String entityid) {
+	if (entityid.equals("0")) {
+	    return null;
+	}
 	BasicDBObject searchQuery = new BasicDBObject();
 	searchQuery.put("_id", Integer.parseInt(entityid));
 	DBCursor cursor = m_entities.find(searchQuery);
@@ -351,10 +439,59 @@ public class MongoInterface {
 	}
 	return null;	
     }
+
+    public String getEntityType(String entityid) {
+	if (entityid.equals("0")) {
+	    return null;
+	}
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("_id", Integer.parseInt(entityid));
+	DBCursor cursor = m_entities.find(searchQuery);
+	if (cursor.count() == 1) {
+	    DBObject document = cursor.next();
+	    return document.get("type").toString();
+	}
+	else {
+	    System.out.println("ERROR: counld not find unique entity for " + entityid);
+	}
+	return null;
+    }
+
+    public void setEntityName(String entityid, String name) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("_id", Integer.parseInt(entityid));
+	DBCursor cursor = m_entities.find(searchQuery);
+	if (cursor.count() == 1) {
+	    BasicDBObject updateQuery =  new BasicDBObject();
+	    BasicDBObject newFields = new BasicDBObject();
+	    newFields.append("name", name);
+	    updateQuery.append( "$set", newFields);
+	    m_entities.update(searchQuery, updateQuery);
+	}
+	
+    }
+
+    public void setEntityEmail(String entityid, String email) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("_id", Integer.parseInt(entityid));
+	DBCursor cursor = m_entities.find(searchQuery);
+	if (cursor.count() == 1) {
+	    BasicDBObject updateQuery =  new BasicDBObject();
+	    BasicDBObject newFields = new BasicDBObject();
+	    newFields.append("email", email);
+	    updateQuery.append( "$set", newFields);
+	    m_entities.update(searchQuery, updateQuery);
+	}
+	
+    }
+    
     
     public String AddEntity(String companyid, String parent, String name, String email, String type) {
 	BasicDBObject document = new BasicDBObject();
 	Object id = getNextID();
+	if (parent == null) {
+	    parent = "0";
+	}
 	document.append("_id", id);
 	document.append("companyid", companyid);
 	document.append("parent", parent);
@@ -365,18 +502,62 @@ public class MongoInterface {
 	m_entities.insert(document);
 	return id.toString();
     }
+    
+    public void PropogateToParent(String companyid, String parent, String propagate_state) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("companyid", companyid);
+	searchQuery.put("parent", parent);
+	DBCursor cursor = m_entities.find(searchQuery);
+	int count = 0;
+	int num_children = cursor.count();
+	//	System.out.println("entity " + parent + " has " + num_children + " children");
+	while(cursor.hasNext()) {
+	    DBObject document = cursor.next();
+	    Object stateobj = document.get("state");	    
+	    String state = "offline"; // default if does not exist yet
+	    if (stateobj != null) {
+		state = stateobj.toString();
+	    }
+	    if (state.equals(propagate_state)) {
+		count++;
+	    }
+	}
+	/*
+           In order to propagate an offline state to a parent, all children must be offline
+         */
+	if (propagate_state.equals("offline") && count == num_children) {
+	    System.out.println("set state " + propagate_state + " in parent " + parent);
+	    SetEntityState(companyid, parent, propagate_state);
+	}
+	else if (propagate_state.equals("available")) {
+	    System.out.println("set state " + propagate_state + " in parent " + parent);
+	    SetEntityState(companyid, parent, propagate_state);
+	}
+    }
 
+    /*
+         entity state recursively propagates to parents
+     */
     public void SetEntityState(String companyid, String entityid, String state) {
 	BasicDBObject searchQuery = new BasicDBObject();
 	searchQuery.put("companyid", companyid);
 	searchQuery.put("_id", Integer.parseInt(entityid));
 	DBCursor cursor = m_entities.find(searchQuery);
 	if (cursor.count() == 1) {
+	    DBObject document = cursor.next();
+	    String parent = document.get("parent").toString();
 	    BasicDBObject updateQuery =  new BasicDBObject();
 	    BasicDBObject newFields = new BasicDBObject();
 	    newFields.append("state", state);
 	    updateQuery.append( "$set", newFields);
 	    m_entities.update(searchQuery, updateQuery);
+	    if (parent.equals("0")) {
+		System.out.println("No need to propagate state to the top level");	
+	    }
+	    else {
+		System.out.println("propagate state " + state + " from " + entityid + " to parent " + parent);
+		PropogateToParent(companyid, parent, state);
+	    }
 	}
 	else {
 	    System.out.println("ERROR: counld not find unique entity for companyid=" + companyid + " entityid=" + entityid);
@@ -400,7 +581,35 @@ public class MongoInterface {
 	}
 	return null;
     }
-    
+
+    public void setEntityTimestamp(String entityid) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("_id", Integer.parseInt(entityid));
+	DBCursor cursor = m_entities.find(searchQuery);
+	Date now = new Date();	
+	if (cursor.count() == 1) {
+	    DBObject document = cursor.next();
+	    BasicDBObject updateQuery =  new BasicDBObject();
+	    BasicDBObject newFields = new BasicDBObject();
+	    newFields.append("time", now.getTime());
+	    updateQuery.append( "$set", newFields);
+	    m_entities.update(searchQuery, updateQuery);
+	}
+    }
+
+    public Long getEntityTimestamp(String entityid) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("_id", Integer.parseInt(entityid));
+	DBCursor cursor = m_entities.find(searchQuery);
+	if (cursor.count() == 1) {
+	    DBObject document = cursor.next();
+	    Object tobj = document.get("time");
+	    if (tobj != null) {
+		return Long.parseLong(tobj.toString());
+	    }
+	}
+	return 0L;
+    }
     public String AddCompany(String name, String email, String phone, String account_sid, String auth_token) {
 	BasicDBObject document = new BasicDBObject();
 	Object id = getNextID();
@@ -435,46 +644,73 @@ public class MongoInterface {
 	}
 	return null;
     }
-    
-    public void ShowEntities(String companyid, String parent, PrintWriter out) {
-	out.println("<h1>Children of Parent " + parent + " :</h1>");
-	out.println("<table cellspacing=\"30\">");
-	out.println("<br><tr><td><b>Entity Name</b></td><td><b>Type</b></td><td><b>email</b></td><td><b>Delete It</b></td></tr>");
+
+    public Entity getEntity(String entityid) {
 	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("_id", Integer.parseInt(entityid));
+	DBCursor cursor = m_entities.find(searchQuery);
+	if (cursor.count() == 1) {
+	    DBObject document = cursor.next();
+	    return  getEntity(document);
+	}
+	return null;
+    }
+    
+    public Entity getEntity(DBObject document) {
+	String entityid = document.get("_id").toString();
+	String type = document.get("type").toString();
+	String name = document.get("name").toString();
+	String email = document.get("email").toString();
+	String parent = document.get("parent").toString();
+	String companyid = document.get("companyid").toString();
+	Object stateobj = document.get("state");
+	String state = "offline"; // default if not defined
+	if (stateobj != null) {
+	    state = stateobj.toString();
+	}
+	Entity entity = new Entity(entityid, parent, name, companyid, type, email, state);
+	return entity;
+    }
+    
+    public List<Entity> GetEntities(String companyid, String parent) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	if (parent == null) {
+	    parent = "0";
+	}
 	searchQuery.put("companyid", companyid);
 	searchQuery.put("parent", parent);
 	DBCursor cursor = m_entities.find(searchQuery);
+	List<Entity> entities = new ArrayList<Entity>();
 	while (cursor.hasNext()) {
-	    out.println("<br><tr>");
 	    DBObject document = cursor.next();
-	    out.println("<td>" + document.get("name").toString() + "</td>");
-	    String type = document.get("type").toString();
-	    out.println("<td>" + type + "</td>");
-            if (type.equals("employee")) {
-		out.println("<td>" + document.get("email").toString() + "</td>");
-	    }
-	    else {
-		out.println("<td></td>");
-	    }
-	    out.println("<td><form action=\"Admin\" method=\"GET\">" +
-			"<input type=\"hidden\" name=\"companyid\" value=\"" + companyid + "\"/>" +
-			"<input type=\"hidden\" name=\"action\" value=\"delete\"/>" +
-			"<input type=\"submit\" name=\"delete\" value=\"" + document.get("_id").toString() + "\"/></form></td>");
-	    out.println("</tr>");
+	    Entity entity = getEntity(document);
+	    entities.add(entity);
 	}
-	out.println("</table>");
+	return entities;
     }
 
     private String doFindCompany(String phone) {
 	BasicDBObject searchQuery = new BasicDBObject();       
 	searchQuery.put("phone", phone);
-	DBCursor cursor = m_companies.find(searchQuery);
+	DBCursor cursor = m_actives.find(searchQuery);
+	/*
+           First check for the case where companies are sharing the phone number
+         */
 	if (cursor.count() == 1) {
+	    System.out.println("Found entry with " + phone + " in actives collection");
 	    DBObject document = cursor.next();
-	    return document.get("_id").toString();
+	    return document.get("active").toString();
 	}
-	else if (cursor.count() > 1) {
-	    return "multiple";
+	else if (cursor.count() == 0) {
+	    System.out.println(phone + " not found in actives collection");
+	    cursor = m_companies.find(searchQuery);
+	    if (cursor.count() == 1) {
+		DBObject document = cursor.next();
+		return document.get("_id").toString();
+	    }
+	    else if (cursor.count() > 1) {
+		return "multiple";
+	    }
 	}
 	return null;
     }
@@ -498,11 +734,30 @@ public class MongoInterface {
 	}
 	return null;
     }
-   
+
+    public Map<String, String> getPoolIdleTime(String companyid, String pool_entityid) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("companyid", companyid);
+	searchQuery.put("parent", pool_entityid);
+	searchQuery.put("state", "available");
+	DBCursor cursor = m_entities.find(searchQuery);
+	Map<String, String> pool_idle = new HashMap<String, String>();
+	Date now = new Date();
+	while(cursor.hasNext()) {
+	    DBObject document = cursor.next();
+	    String entityid = document.get("_id").toString();
+	    Long avail_time = getEntityTimestamp(entityid);
+	    Long idle = now.getTime() - avail_time;
+	    pool_idle.put(entityid, idle.toString()); 
+	}
+	return pool_idle;
+    }
+    
     public List<String> FindAvailableEntities(String companyid) {
 	BasicDBObject searchQuery = new BasicDBObject();
 	searchQuery.put("companyid", companyid);
 	searchQuery.put("state", "available");
+	searchQuery.put("parent", "0"); // FIXME: we may want to route to entities not at the top level
 	DBCursor cursor = m_entities.find(searchQuery);
 	List<String> available = new ArrayList<String>();
 	while(cursor.hasNext()) {
@@ -513,24 +768,28 @@ public class MongoInterface {
 	return available;
     }
 
-    public void ShowCompanies(PrintWriter out) {
-	out.println("<h1>Company List:</h1>");
-	out.println("<table cellspacing=\"30\">");
-	out.println("<br><tr><td><b>Company Name</b></td><td><b>email address</b></td><td><b>Phone Number</b></td><td><b>ID</b></td><td><b>Delete It</b></td></tr>");
+    public Company getCompany(DBObject document) {
+       String name = document.get("name").toString();
+       String email = document.get("email").toString();
+       String phone = document.get("phone").toString();
+       String id = document.get("_id").toString();
+       String sid = document.get("account_sid").toString();
+       String auth = document.get("auth_token").toString();
+       Company company = new Company(id, name, email, phone, sid, auth);
+       return company;
+    }
+    
+    public List<Company> getCompanies() {
 	DBCursor cursor = m_companies.find();
+	List<Company> companies = new ArrayList<Company>();
 	while (cursor.hasNext()) {
 	    DBObject document = cursor.next();
-	    out.println("<br><tr>");
-	    out.println("<td>" + document.get("name").toString() + "</td>");
-	    out.println("<td>" + document.get("email").toString() + "</td>");
-	    out.println("<td>" + document.get("phone").toString() + "</td>");
-	    out.println("<td>" + document.get("_id").toString() + "</td>");
-	    out.println("<td><form action=\"SuperAdmin\" method=\"GET\"><input type=\"submit\" name=\"delete\" value=\"" + document.get("_id").toString() + "\"/></form></td>");
-	    out.println("</tr><br>");
+	    Company company = getCompany(document);
+	    companies.add(company);
 	}
-	out.println("</table>");
-
+	return companies;
     }
+    
     public void RemoveEntity(String id) {
 	BasicDBObject searchQuery = new BasicDBObject("_id", Integer.parseInt(id));
 	DBCursor cursor = m_entities.find(searchQuery);
@@ -543,6 +802,25 @@ public class MongoInterface {
 	}
 	else if (cursor.count()==0) {
 	    System.out.println("ERROR: could not find entity with id = " + id);
+	}
+    }
+
+    public void ActivateCompany(String phone, String companyid) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("phone", phone);
+	DBCursor cursor = m_actives.find(searchQuery);
+	if (cursor.count()==1) {
+	    BasicDBObject updateQuery =  new BasicDBObject();
+	    BasicDBObject newFields = new BasicDBObject();
+	    newFields.append("active", companyid);
+	    updateQuery.append( "$set", newFields);
+	    m_actives.update(searchQuery, updateQuery);
+	}
+	else if (cursor.count() == 0) {
+	    BasicDBObject document = new BasicDBObject();
+	    document.append("phone", phone);
+	    document.append("active", companyid);
+	    m_actives.insert(document);
 	}
     }
     
@@ -562,7 +840,7 @@ public class MongoInterface {
 	BasicDBObject document = new BasicDBObject();
 	Object id = getNextID();		
 	document.append("_id", id);
-	document.append("time",message.getTime());
+	document.append("time",message.getTime().getTime());
 	document.append("type",message.getType());
 	document.append("content",message.getContent());
 	document.append("from", message.getFrom());
@@ -619,7 +897,7 @@ public class MongoInterface {
 
     private SMSmessage getMessage(DBObject document) {
 	String type = document.get("type").toString();
-	String time = document.get("time").toString();
+	Date time = new Date(Long.parseLong(document.get("time").toString()));
 	String content = document.get("content").toString();
 	String to = document.get("to").toString();
 	String from = document.get("from").toString();
@@ -651,6 +929,38 @@ public class MongoInterface {
 	return mess;
     }
     
+    public SMSmessage getPreviousMessage(String customer, String messageid) {
+	System.out.println("get message previous to " + messageid + " for customer " + customer);
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("customer", customer);
+	DBCursor cursor = m_messages.find(searchQuery);
+	TreeMap<String, DBObject> customer_messages = new TreeMap<String, DBObject>();
+	while (cursor.hasNext()) {
+	    DBObject document = cursor.next();
+	    String mid = document.get("_id").toString();
+	    //	    System.out.println("add mid " + mid + " to TreeMap");
+	    customer_messages.put( mid, document);
+	}
+	Object[] midarray = customer_messages.keySet().toArray();
+	int i;
+	String previousid = null;
+	for ( i=midarray.length-1 ; i>=0 && previousid == null ; i--) {
+	    String mid = midarray[i].toString();
+	    //	    System.out.println("check mid " + mid);
+	    if (midarray[i].toString().equals(messageid) && i>0) {
+		//		System.out.println("mid " + mid + " equals " + messageid);
+		previousid = midarray[i-1].toString();
+		//		System.out.println("previous is is" + previousid);
+	    }
+	}
+	if (previousid != null) {
+	    DBObject document = customer_messages.get(previousid);
+	    //	    System.out.println("returning previousid = " + previousid);
+	    return getMessage(document);
+	}
+	return null;
+    }
+    
     public SMSmessage getMessage(String messageid) {
 	BasicDBObject searchQuery = new BasicDBObject();
 	searchQuery.put("_id", Integer.parseInt(messageid));
@@ -677,6 +987,7 @@ public class MongoInterface {
 	    SMSmessage mess = getMessage(document);
 	    messages.add(mess);	    
 	}
+	//	System.out.println("getMessages for companyid " + companyid + " entityid " + entityid + " customer " + customer + " returned " + messages.size() + " messages");
 	return messages;
     }
 
