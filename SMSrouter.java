@@ -57,8 +57,8 @@ class RouterResult {
 	switch(m_status) {
 	case PENDING_ROUTING:
 	    return "status = " + m_status.toString() + " routing question = " + m_auto_response;
-	case ROUTED:
-	    return "status = " + m_status.toString() + " routed to = " + m_entityid;
+	case ROUTED:	    
+	    return "status = " + m_status.toString() + " routed to = " + m_entityid + " auto resp = " + m_auto_response;
 	case WAITING:
 	    return "status = " + m_status.toString() + " auto response = " + m_auto_response;
 	default:
@@ -101,10 +101,10 @@ public class SMSrouter {
     private final int m_acceptance_threshold = 90;
     private final int m_confirmation_threshold = 50;
     
-    public SMSrouter(String companyid, String customerid) {
+    public SMSrouter(String db, String companyid, String customerid) {
 	m_companyid = companyid;
 	m_customerid = customerid;
-	m_mongo = MongoInterface.getInstance();
+	m_mongo = MongoInterface.getInstance(db);
     }
 
     private String createRoutingQuestion(List<String> available) {
@@ -207,9 +207,11 @@ public class SMSrouter {
 	char[] carr = content.toCharArray();
 	int len = content.length();
 	int i=0;
-	while(carr[i] != '#' && i<len) {
-	    i++;
+	while(i<len && carr[i] != '#') {
+	    //	    System.out.println("parseCommand carr[" + i + "] = " + carr[i]);
+	    i++;	    
 	}
+	//	System.out.println("parseCommand found # at pos = " + i + " len = " + len); 
 	if ( i>= len-1) {
 	    return null; // no command found
 	}
@@ -247,20 +249,25 @@ public class SMSrouter {
 	return null;
     }
     
-    private RouterResult ProcessRouterCommands(String content) {
+    private RouterResult ProcessRouterCommands(String content, CustomerStatus status) {
+	System.out.println("ProcessRouterCommands enter " + content);
 	RouterCommand router_command = parseCommand(content);
 	String auto_response = "";
-	CustomerStatus status = CustomerStatus.UNKNOWN;
 	String route = null;
 	if (router_command != null) {
+	    System.out.println("ProcessRouterCommands found command");
 	    Command command = router_command.getCommand();
+	    
 	    switch(command) {
-	    case HELP:
+	    case HELP: // no state change with help, just an auto response
 		System.out.println("Customer wants HELP");
 		auto_response = "Commands:\n#help ... displayes this message\n" +
 		    "#go target ... route your message to target\n" +
-		    "#list ... list available targets\n" +
+ 		    "#list ... list available targets\n" +
 		    "#lang LANG ... sets language support to LANG\n";
+		if (status == CustomerStatus.ROUTED) {
+		    route = m_mongo.getCustomerRoute(m_customerid); // keep old route
+		}
 		break;
 	    case GO:
 		System.out.println("Customer wants to GO " + router_command.getTarget());
@@ -276,18 +283,19 @@ public class SMSrouter {
 			}
 			else if (best.getScore() > m_confirmation_threshold) {
 			    auto_response = "Do you wish to go to " + best.getName() + "? (y/n)";
-			    status = CustomerStatus.PENDING_ROUTING;
+			    route =  best.getEntityID();
+			    status = CustomerStatus.CONFIRM_ROUTING;
 			    break;
 			}
 		    }
 		    if (doMatch(router_command.getTarget(), "top") == 0) { 
 			m_mongo.removeCustomerRoute(m_customerid);
+			status = CustomerStatus.UNKNOWN;
 		    }
 		}
 		break;
-	    case LANG:
+	    case LANG: // FIXME: not implemented yet
 		System.out.println("Customer wants LANG " + router_command.getTarget());
-		status = CustomerStatus.UNKNOWN;
 		break;
 	    }
 	    return new RouterResult(status, route, auto_response);
@@ -360,31 +368,44 @@ public class SMSrouter {
 	return null;
     }
 
-    private RouterResult ProcessNewRoute(String route, CustomerStatus status) {
-	String entity_type = m_mongo.getEntityType(route);
+    private RouterResult ProcessNewRoute(RouterResult result) {
+	String entity_type = m_mongo.getEntityType(result.getDestination());
 	if (entity_type.equals("employee")) {
-	    System.out.println("routing customer " + m_customerid + " to employee " + route);
-	    m_mongo.RouteCustomerToEntity(route, m_customerid);
-	    return new RouterResult(CustomerStatus.ROUTED, route, "");
+	    System.out.println("routing customer " + m_customerid + " to employee " + result.getDestination());
+	    m_mongo.RouteCustomerToEntity(result.getDestination(), m_customerid);
+	    return result; // just return it as is
 	}
 	else if (entity_type.equals("pool")) { // if our route is a pool then pick someone from the pool
-	    System.out.println("get selection for " + m_customerid + " from pool " + route);
-	    RouterResult pool_selection = getPoolSelection(route);
-	    if (pool_selection.getStatus() == CustomerStatus.ROUTED) {
-		System.out.println("routing customer " + m_customerid + " to employee " + route);
-		m_mongo.RouteCustomerToEntity(pool_selection.getDestination(), m_customerid);
+	    System.out.println("get selection for " + m_customerid + " from pool " + result.getDestination());
+	    RouterResult pool_selection = getPoolSelection(result.getDestination());
+	    if (pool_selection != null) {
+		if (pool_selection.getStatus() == CustomerStatus.ROUTED) {
+		    System.out.println("routing customer " + m_customerid + " to employee " + pool_selection.getDestination());
+		    m_mongo.RouteCustomerToEntity(pool_selection.getDestination(), m_customerid);
+		}
+		else {
+		    System.out.println("ERROR: unable to get a route from pool " + result.getDestination());
+		}
 	    }
 	    return pool_selection;
 	}
-	return null;
+	return null; // shouldn't happen
     }
     
     // Find an employee that can respond to text message sent to company phone number
     private RouterResult FindRoute(String answer, CustomerStatus customer_status) {
-	RouterResult command_result = ProcessRouterCommands(answer);
+	System.out.println("FindRoute enter " + answer);
+	RouterResult command_result = ProcessRouterCommands(answer, customer_status);
 	if (command_result != null) {
-	    System.out.println("FindRoute returning #command, " + command_result.toString());
-	    return command_result;
+	    // status UNKNOWN means we dont know what to do so dont return yet
+	    // FIXME: how will HELP work from UNKNOWN state?
+	    if (command_result.getStatus() == CustomerStatus.UNKNOWN) {
+		customer_status = command_result.getStatus();
+	    }
+	    else {
+		System.out.println("FindRoute returning #command, " + command_result.toString());
+		return command_result;
+	    }
 	}
 	/*
            FIXME: keyword routing implemented this way takes precedence over previous routing
@@ -397,10 +418,19 @@ public class SMSrouter {
 	    System.out.println("FindRoute returning keyword result, " + keyword_result.toString());
 	    return keyword_result;
 	}
+	/*
+            MAYBE
+            FIXME: this algorithm does not consider the load on a given entity. for example if we have
+                   2 available entities, one with 10 routed customer and one with 0 routed customers,
+                   the customer will still be asked which one to chose. (if they are in a pool
+                   then the load will be balanced based on idle time)
+         */
 	List<String> available = m_mongo.FindAvailableEntities(m_companyid);
+	System.out.println("FindRoute found " + available.size() + " available entities");
 	if (available == null || available.size() == 0) {
 	    return new RouterResult(CustomerStatus.WAITING, "There are no available agents at the moment");
 	}
+	System.out.println("FindRoute handle customer status " + customer_status);
 	switch(customer_status) {
 	case UNKNOWN:
 	    if (available.size() == 1) {
@@ -420,19 +450,41 @@ public class SMSrouter {
 	    else if (available.size() > 1) {
 		Match best = parseAnswer(available, answer);
 		if (best != null) {
+		    System.out.println("parseAnswer returned choice = " + best.getEntityID() + " score = " + best.getScore());
 		    if (best.getScore() > m_acceptance_threshold) {
 			System.out.println("selecting best available route " + best.getEntityID() + " with status = " + customer_status);
 			return new RouterResult(CustomerStatus.ROUTED, best.getEntityID(), "");
 		    }
 		    else if (best.getScore() > m_confirmation_threshold) {
 			String auto_response = "Do you wish to go to " + best.getName() + "? (y/n)";
-			return new RouterResult(CustomerStatus.PENDING_ROUTING, auto_response);
+			return new RouterResult(CustomerStatus.CONFIRM_ROUTING, best.getEntityID(), auto_response);
+		    }
+		    else { // if below the confirm threshold we re-prompt
+			return new RouterResult(CustomerStatus.PENDING_ROUTING, createRoutingQuestion(available));
 		    }
 		}
-		else {
+		else { // FIXME: should re-prompt instead of arbitrarily picking first
 		    System.out.println("selecting first route because no best route found with status = " + customer_status);
 		    return new RouterResult(CustomerStatus.ROUTED, available.get(0), "");
 		}
+	    }
+	    break;
+	case CONFIRM_ROUTING:
+	    if (answer.equalsIgnoreCase("y")) {
+		String route = m_mongo.getCustomerConfirmRoute(m_customerid);
+		if (route != null) {
+		    if (route.equals("")) {
+			System.out.println("No confirmation route found");
+		    }
+		    else {
+			m_mongo.setCustomerConfirmRoute(m_customerid, "");
+			return new RouterResult(CustomerStatus.ROUTED, route, "");
+		    }
+		}
+		System.out.println("No confirmation route found");
+	    }
+	    else { // failed confirmation so ask routing question again
+		return new RouterResult(CustomerStatus.PENDING_ROUTING, createRoutingQuestion(available));
 	    }
 	    break;
 	case ROUTED:
@@ -452,7 +504,7 @@ public class SMSrouter {
             questions to determine where to route. Therfore we do not route the answers
             as they are intended for the router rather than the business rep
 	 */
-	if (customer_status != CustomerStatus.PENDING_ROUTING) {
+	if (customer_status != CustomerStatus.PENDING_ROUTING && customer_status != CustomerStatus.CONFIRM_ROUTING) {
 	    m_mongo.setCustomerMessage(m_customerid, messageid);
 	}
 	/*
@@ -480,12 +532,20 @@ public class SMSrouter {
 		m_mongo.addCustomerToWaitingQueue(m_companyid, m_customerid);
 	    }
 	    else if (customer_status == CustomerStatus.ROUTED) {
-		router_result = ProcessNewRoute(router_result.getDestination(), customer_status);	    
+		router_result = ProcessNewRoute(router_result);	    
+	    }
+	    else if (customer_status == CustomerStatus.CONFIRM_ROUTING) {
+		m_mongo.setCustomerConfirmRoute(m_customerid, router_result.getDestination());
 	    }
 	}
 	
-	if (router_result != null) {
+	if (router_result == null) {
+	    return new RouterResult(CustomerStatus.UNKNOWN, "ERROR: no route or response found!"); // should not happen
+	}
+	else {
 	    m_mongo.setCustomerStatus(m_customerid, router_result.getStatus());
+	    System.out.println("doRoute returns status = " + router_result.getStatus() + " route = " +
+			       router_result.getDestination() + " auto response = " +  router_result.getAutoResponse());   
 	}
 	return router_result;
     }

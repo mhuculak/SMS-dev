@@ -51,13 +51,19 @@ public class EmployeeInput extends HttpServlet {
     
     public void service(HttpServletRequest request, HttpServletResponse response) throws IOException {
 	String query = request.getQueryString();
-	m_mongo = MongoInterface.getInstance();	
 	response.setContentType("text/html");
 	PrintWriter out = response.getWriter();
 	if (query == null) {
 	    System.out.println("ERROR: no company specified");
 	}
 	else {
+	    String db = request.getParameter("db");
+	    Boolean unit_mode = false;
+	    if (db != null && db.equals("unit")) {
+		response.setContentType("text/plain");
+		unit_mode = true;
+	    }
+	    m_mongo = MongoInterface.getInstance(db);	
 	    if (query.contains("companyid")) {
 		String companyid = request.getParameter("companyid");
 		if (query.contains("entityid")) {
@@ -116,11 +122,13 @@ public class EmployeeInput extends HttpServlet {
 		    }
 		    
 		    String state = m_mongo.GetEntityState(companyid, entityid);
-		    out.println("<table><tr><td><br>");
-		    out.println(TextInputForm(companyid, entityid));
-		    out.println("</td><td><br>");
-		    out.println(StateInputForm(companyid, entityid, state));
-		    out.println("</td></tr></table><br>");
+		    if (unit_mode == false) {
+			out.println("<table><tr><td><br>");
+			out.println(TextInputForm(companyid, entityid));
+			out.println("</td><td><br>");
+			out.println(StateInputForm(companyid, entityid, state));
+			out.println("</td></tr></table><br>");
+		    }
 		}
 		else {
 		    System.out.println("ERROR: no entity specified");

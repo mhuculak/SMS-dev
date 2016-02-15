@@ -89,12 +89,14 @@ public class SMSservlet extends HttpServlet {
     // You can also use doGet() or doPost()
     public void service(HttpServletRequest request, HttpServletResponse response) throws IOException {
 	String body = getBody(request);
+	System.out.println(body);
         String[] info = body.split("&");
 	String content = "";
 	String from = "";
 	String to = "";
 	String query = request.getQueryString();
 	PrintWriter out = null;
+	Boolean unit_mode = false;
 	int i;
 	for ( i=0 ; i<info.length ; i++ ) {
 	    String[] keyval = info[i].split("=");
@@ -104,38 +106,37 @@ public class SMSservlet extends HttpServlet {
 		if (key.equals("Body")) {
 		    //		    content = value.replace("+", " ");
 		    content = value;
+		    //		    System.out.println("SMSservlet got content = " + content);
 		}
 		else if (key.equals("From")) {
 		    from = value;
+		    //   System.out.println("SMSservlet got text from " + from);
 		}
 		else if (key.equals("To")) {
 		    to = value;
+		    // System.out.println("SMSservlet text to " + to);
 		}
 	    }
 	}
-
-	m_mongo = MongoInterface.getInstance();
-	
-	Boolean html_mode = false; // html mode is used for debugging
-	if (query != null && query.contains("content")) {
-	    html_mode = true;
-	    query = request.getQueryString();
-	    response.setContentType("text/html");
+	String db = request.getParameter("db");
+	System.out.println("query = " + query + " db = " + db);
+	m_mongo = MongoInterface.getInstance(db);
+	if (db != null && db.equals("unit")) {
+	    response.setContentType("text/plain");
+	    unit_mode = true;
 	    out = response.getWriter();
-	    content = request.getParameter("content");
-	    to = request.getParameter("to");
-	    from = request.getParameter("from");
-        }
-	else {
-	    from = from.replace("+", "");
-	    to = to.replace("+", "");
+	    System.out.println("SMSservlet in unit mode");
 	}
+	
+	from = from.replace("+", "");
+	to = to.replace("+", "");
+
 	System.out.println("adding customer " + from);
      	String customerid = m_mongo.AddCustomer(from);  // for now a customer is ID'd with their phone number
 	CustomerStatus customer_status = m_mongo.getCustomerStatus(customerid);
 	if (customer_status == null) {
 	    customer_status = CustomerStatus.UNKNOWN;
-	    System.out.println("set customer status to" + customer_status.toString());
+	    System.out.println("set customer status to " + customer_status.toString());
 	}
 	System.out.println("create new SMS message with content = " + content);
 	SMSmessage customer_message = new SMSmessage(content, from, to);
@@ -146,16 +147,15 @@ public class SMSservlet extends HttpServlet {
 	customer_message.setCompanyID(companyid);
 	String customer_messageid = m_mongo.addMessage(customer_message);
 		
-	SMSrouter router = new SMSrouter(companyid, customerid);
+	SMSrouter router = new SMSrouter(db, companyid, customerid);
 	RouterResult router_result = router.doRoute(customer_messageid, content, customer_status);	
 
-	if (html_mode == true) {
-	    out.println("<h1>reponse:</h1>");
+	if (unit_mode == true) {
+	    System.out.println("sending auto response " + router_result.getAutoResponse());
 	    out.println(router_result.getAutoResponse());
 	}
 	else {
-	    TwiMLResponse twiml = new TwiMLResponse();
-	    
+	    TwiMLResponse twiml = new TwiMLResponse();	
 	    Message message = new Message(router_result.getAutoResponse());
 
 	    try {
@@ -163,11 +163,9 @@ public class SMSservlet extends HttpServlet {
 	    } catch (TwiMLException e) {
 		e.printStackTrace();
 	    }
- 
+	
 	    response.setContentType("application/xml");
 	    response.getWriter().print(twiml.toXML());
-        }
-
-	
+	}
     }
 }

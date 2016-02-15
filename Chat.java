@@ -19,7 +19,7 @@ public class Chat extends HttpServlet {
 
      public void service(HttpServletRequest request, HttpServletResponse response) throws IOException {
 	String query = request.getQueryString();
-	m_mongo = MongoInterface.getInstance();	
+
 	response.setContentType("text/html");
 	response.setIntHeader("Refresh", 5);
 	Date curr = new Date();
@@ -31,6 +31,8 @@ public class Chat extends HttpServlet {
 	    System.out.println("ERROR: no company specified");
 	}
 	else {
+	    String db = request.getParameter("db");
+	    m_mongo = MongoInterface.getInstance(db);	
 	    if (query.contains("companyid")) {
 		String companyid = request.getParameter("companyid");
 		if (query.contains("entityid")) {

@@ -13,22 +13,23 @@ import com.mongodb.DBCursor;
 import com.mongodb.BasicDBList;
 
 public class MongoInterface {
-    private static MongoInterface m_instance = null;
-    private static MongoClient m_client = null;
-    private static DB m_db = null;
-    private static DBCollection m_companies = null;
-    private static DBCollection m_counter = null;
-    private static DBCollection m_entities = null;
-    private static DBCollection m_messages = null;
-    private static DBCollection m_customers = null;
-    private static DBCollection m_advertisments = null;
-    private static DBCollection m_waiting = null;
-    private static DBCollection m_actives = null;
     
-    private MongoInterface() {
+    private static Map<String, MongoInterface> m_instance = null; // static map allows us to share db interfaces i.e. 1 connect per process per db
+    private MongoClient m_client = null;
+    private DB m_db = null;
+    private DBCollection m_companies = null;
+    private DBCollection m_counter = null;
+    private DBCollection m_entities = null;
+    private DBCollection m_messages = null;
+    private DBCollection m_customers = null;
+    private DBCollection m_advertisments = null;
+    private DBCollection m_waiting = null;
+    private DBCollection m_actives = null;
+    
+    private MongoInterface(String db) { // private to share connections via getIntance()
 	try {
 	    m_client = new MongoClient("localhost", 27017);
-	    m_db = m_client.getDB("demo");                    
+	    m_db = m_client.getDB(db);                    
 	    m_companies = m_db.getCollection("companies");
 	    m_counter = m_db.getCollection("counters");
 	    m_entities = m_db.getCollection("entities"); // business reps
@@ -43,7 +44,7 @@ public class MongoInterface {
         }   
     }
     
-    private static Object getNextID() {
+    private Object getNextID() {
 	if (m_counter.count() == 0) {
 	    BasicDBObject document = new BasicDBObject();
 	    document.append("_id", "entries");
@@ -59,11 +60,19 @@ public class MongoInterface {
         return result.get("seq");
     }    
     
-    public static MongoInterface getInstance() {
-	if (m_instance == null) {
-	    m_instance = new MongoInterface(); 
+    public static MongoInterface getInstance(String db) {
+	if (db == null) {
+	    db = "demo";
 	}
-	return m_instance;
+	if (m_instance == null) {
+	    m_instance = new HashMap<String, MongoInterface>();
+	}	
+	if (m_instance.get(db) == null) {
+	    System.out.println("create Mongo DB connection to db = " + db);
+	    MongoInterface db_if = new MongoInterface(db);
+	    m_instance.put(db, db_if);
+	}
+	return m_instance.get(db);
     }
 
     public void addCustomerToWaitingQueue(String companyid, String customerid) {
@@ -205,6 +214,37 @@ public class MongoInterface {
 	}
     }
 
+    public void setCustomerConfirmRoute(String customerid, String entityid) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("_id", Integer.parseInt(customerid));
+	DBCursor cursor = m_customers.find(searchQuery);
+	if (cursor.count() == 1) {
+	    BasicDBObject updateQuery =  new BasicDBObject();
+	    BasicDBObject newFields = new BasicDBObject();
+	    newFields.append("confirm", entityid);
+	    updateQuery.append( "$set", newFields);
+	    m_customers.update(searchQuery, updateQuery);
+	}
+	else {
+	    System.out.println("ERROR: counld not find unique customer for " + customerid);	
+	}
+    }
+
+    public String getCustomerConfirmRoute(String customerid) {
+	BasicDBObject searchQuery = new BasicDBObject();
+	searchQuery.put("_id", Integer.parseInt(customerid));
+	DBCursor cursor = m_customers.find(searchQuery);
+	if (cursor.count() == 1) {
+	   DBObject document = cursor.next();
+	   Object confirmobj = document.get("confirm");
+	   if (confirmobj != null) {
+	       return confirmobj.toString();
+	   }
+	   System.out.println("ERROR: confirm not found for customer " + customerid);
+	}
+	return null;
+    }
+    
     public String getCustomerMessageFromPhone(String phone) {
 	BasicDBObject searchQuery = new BasicDBObject();
 	searchQuery.put("phone", phone);

@@ -2,7 +2,7 @@ import java.util.*;
 
 enum SMSmessageStatus { WAITING, RESPONDED, TIMEOUT, REDIRECTED, ERROR };
 
-enum CustomerStatus { UNKNOWN, PENDING_ROUTING, ROUTED, WAITING };
+enum CustomerStatus { UNKNOWN, PENDING_ROUTING, CONFIRM_ROUTING, ROUTED, WAITING };
     
 public class SMSmessage {
     private Date m_time;       // time stamp

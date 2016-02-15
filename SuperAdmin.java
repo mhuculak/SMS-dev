@@ -48,48 +48,64 @@ public class SuperAdmin extends HttpServlet {
     
     public void service(HttpServletRequest request, HttpServletResponse response) throws IOException {
 	String query = request.getQueryString();
-
-	m_mongo = MongoInterface.getInstance();
 	
 	response.setContentType("text/html");
 	PrintWriter out = response.getWriter();
 
 	if (query == null) {
+	    m_mongo = MongoInterface.getInstance(null);
 	    List<Company> companies = m_mongo.getCompanies();
 	    ShowCompanies(companies, out);
 	    out.println(m_addCompanyForm);
 	}
-	else if (query.contains("action")) {
-	    String action = request.getParameter("action");
-	    if (action.equals("delete")) {
-		m_mongo.RemoveCompany(request.getParameter("delete"));
-	    }
-	    else if (action.equals("activate")) {
-		String companyid = request.getParameter("activate");
+	else {
+	    String db = request.getParameter("db");
+	    Boolean unit_mode = false;
+	    if (db != null && db.equals("unit")) {
+		response.setContentType("text/plain");
+		unit_mode = true;
+	    }	    
+	    m_mongo = MongoInterface.getInstance(db);
+	    if (query.contains("action")) {
+		String action = request.getParameter("action");
+		if (action.equals("delete")) {
+		    m_mongo.RemoveCompany(request.getParameter("delete"));
+		}
+		else if (action.equals("activate")) {
+		    String companyid = request.getParameter("activate");
+		    String phone = request.getParameter("phone");
+		    m_mongo.ActivateCompany(phone, companyid);
+		}
+		if (unit_mode == false) {
+		    out.println("<br><br><a href=\"" + request.getRequestURI() + "\">Return</a>");
+		}
+	    }	
+	    else  {
+		/*
+		out.println("<h1>New Company:</h1>");
+		out.println("<h2>Name: " + request.getParameter("name") + "</h2>");
+		out.println("<h2>email: " + request.getParameter("email") + "</h2>");
+		out.println("<h2>Phone: " + request.getParameter("phone") + "</h2>");
+		out.println("<br><br><a href=\"" + request.getRequestURI() + "\">Return</a>");
+		*/
+		String name = request.getParameter("name");
+		String email = request.getParameter("email");
 		String phone = request.getParameter("phone");
-		m_mongo.ActivateCompany(phone, companyid);
+		String sid = request.getParameter("sid");
+		String token = request.getParameter("token");
+		String id = m_mongo.AddCompany(name, email, phone, sid, token);
+		if (unit_mode == true) {
+		    out.println(id);
+		}
+		else {
+		    out.println("<br><br><a href=\"" + request.getRequestURI() + "\">Return</a>");
+		    String company_uri = request.getScheme() + "://" + request.getServerName() + ":" + request.getServerPort() + "/Admin?companyid=" + id;
+		    String subject = "Your new SMS message service";
+		    String email_body = "Congradulations " + name + ", your company can now receive text message using the following number:\n\n" + phone +
+			"\n\nPlease use the following link " + company_uri + " to administer this service";
+		    EmailSender.SendEmail(subject, email_body, email);
+		}
 	    }
-	    out.println("<br><br><a href=\"" + request.getRequestURI() + "\">Return</a>");
-	}	
-	else  {
-	    
-	    out.println("<h1>New Company:</h1>");
-	    out.println("<h2>Name: " + request.getParameter("name") + "</h2>");
-	    out.println("<h2>email: " + request.getParameter("email") + "</h2>");
-	    out.println("<h2>Phone: " + request.getParameter("phone") + "</h2>");
-	    out.println("<br><br><a href=\"" + request.getRequestURI() + "\">Return</a>");
-	   
-	    String name = request.getParameter("name");
-	    String email = request.getParameter("email");
-	    String phone = request.getParameter("phone");
-	    String sid = request.getParameter("sid");
-	    String token = request.getParameter("token");
-	    String id = m_mongo.AddCompany(name, email, phone, sid, token);
-	    String company_uri = request.getScheme() + "://" + request.getServerName() + ":" + request.getServerPort() + "/Admin?companyid=" + id;
-	    String subject = "Your new SMS message service";
-	    String email_body = "Congradulations " + name + ", your company can now receive text message using the following number:\n\n" + phone +
-			     "\n\nPlease use the following link " + company_uri + " to administer this service";
-	    EmailSender.SendEmail(subject, email_body, email);
 	}
     }
     

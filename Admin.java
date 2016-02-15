@@ -9,6 +9,11 @@ import java.util.*;
 
 import com.mongodb.BasicDBList;
 
+/*
+  TODO: 
+    1. design a mechanism to easily customize the look and feel of the page or import the forms into the company's website
+    2. need a unit test mode which does not output HTML
+ */
 public class Admin extends HttpServlet {
 
     private MongoInterface m_mongo;
@@ -23,7 +28,7 @@ public class Admin extends HttpServlet {
 	    head = "<h1>Add To Top Level:</h1><br>";
 	}
 	else {
-	    if (parent_type.equals("pool")) {
+ 	    if (parent_type.equals("pool")) {
 		head = "<h1>Add To " + parent_name + " Staff:</h1><br>";
 	    }
 	    else {
@@ -152,7 +157,7 @@ public class Admin extends HttpServlet {
     
     public void service(HttpServletRequest request, HttpServletResponse response) throws IOException {
 	String query = request.getQueryString();
-	m_mongo = MongoInterface.getInstance();	
+
 	response.setContentType("text/html");
 	PrintWriter out = response.getWriter();
 
@@ -166,6 +171,15 @@ public class Admin extends HttpServlet {
 	}
 	else {
 	    if (query.contains("companyid")) {
+		
+		String db = request.getParameter("db");
+		Boolean unit_mode = false;
+		if (db != null && db.equals("unit")) {
+		    response.setContentType("text/plain");
+		    unit_mode = true;
+		}
+		m_mongo = MongoInterface.getInstance(db);
+		
 		String companyid = request.getParameter("companyid");
 		String company_name = m_mongo.GetCompanyName(companyid);
 		if (query.contains("entityid")) {
@@ -173,7 +187,7 @@ public class Admin extends HttpServlet {
 		    entity_name = m_mongo.getEntityName(entityid);
 		    entity_type =  m_mongo.getEntityType(entityid);
 		}
-		
+
 		if (query.contains("parent")) {
 		    parent = request.getParameter("parent");
 		}		
@@ -193,13 +207,18 @@ public class Admin extends HttpServlet {
 			String type = request.getParameter("type");			
 			String email = request.getParameter("email");
 			String new_entity_id = m_mongo.AddEntity(companyid, entityid, name, email, type);
-			if (type.equals("employee")) {
-			    String subject = "You have been added to our SMS service";
-			    String service_uri = request.getScheme() + "://" + request.getServerName() + ":" + request.getServerPort() + "/Employee?companyid=" + companyid + "&entityid=" + new_entity_id;
-			    String  email_body = "Congradulations " + name + ", you have been added to your company's text message service." +
-			     "\n\nPlease use the following link " + service_uri + " to use this service";
-			    EmailSender.SendEmail(subject, email_body, email);
-			}			
+			if (unit_mode == true) {
+			    out.println(new_entity_id);
+			}
+			else {
+			    if (type.equals("employee")) {
+				String subject = "You have been added to our SMS service";
+				String service_uri = request.getScheme() + "://" + request.getServerName() + ":" + request.getServerPort() + "/Employee?companyid=" + companyid + "&entityid=" + new_entity_id;
+				    String  email_body = "Congradulations " + name + ", you have been added to your company's text message service." +
+					"\n\nPlease use the following link " + service_uri + " to use this service";
+				    EmailSender.SendEmail(subject, email_body, email);
+			    }
+			}
 		    }
 		    else if (action.equals("edit")) {
 			m_mongo.setEntityName(entityid, name);
@@ -225,7 +244,9 @@ public class Admin extends HttpServlet {
 			    out.println("<h2>Advertisment " + name + " was added</h2>");
 			}
 		    }
-		    out.println("<br><br><a href=\"" + return_uri + "\">Return</a>");
+		    if (unit_mode == false) {
+			out.println("<br><br><a href=\"" + return_uri + "\">Return</a>");
+		    }
 		}
 		else {
 		    if (entity_type == null || entity_type.equals("pool")) {		    
