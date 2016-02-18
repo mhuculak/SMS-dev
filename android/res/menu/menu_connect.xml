@@ -1,0 +1,19 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:context="com.mooo.sms_dev.smscustomer.Connect">
+    <group android:checkableBehavior="single">
+        <item android:id="@+id/menu_connect"
+            android:orderInCategory="1"
+            app:showAsAction="never"
+            android:title="Connect" />
+        <item android:id="@+id/menu_route"
+            android:orderInCategory="2"
+            app:showAsAction="never"
+            android:title="Route" />
+        <item android:id="@+id/menu_chat"
+            android:orderInCategory="3"
+            app:showAsAction="never"
+            android:title="Chat" />
+    </group>
+</menu>
